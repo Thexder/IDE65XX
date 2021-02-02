@@ -176,6 +176,7 @@ void BasePlainTextEdit::wheelEvent(QWheelEvent *e)
 }
 
 // qDebug("test=%s", qPrintable("\\n"));
+
 /**
  * @brief
  * On commentMode being true the shadowCursor's current block gets given insertMarker inserted
@@ -210,21 +211,65 @@ int changeCommentMarker(bool commentMode, QTextCursor shadowCursor, QRegExp remo
     return (shadowSelected.size() - lengthBeforeChange);
 }
 
+int resolveLineCount(QTextCursor tc)
+{
+    // determine how many lines are to affect
+    if (!tc.hasSelection())
+    {
+        tc.select(QTextCursor::LineUnderCursor);
+    }
+    QString selected = tc.selectedText();
+    int numberOfLines = (selected.isEmpty() ? 1 : selected.count("\u2029")+1);
+    return numberOfLines;
+}
+
+/**
+ * @brief
+ * Identifies what action has to be taken (add comment or remove comment)
+ * @param tc                text cursor to operate with
+ * @param cursorMovement    movement to apply before the check
+ * @param marker            marker to detect
+ * @return true indicates add comment, false remove comment action
+ */
+bool identifyAction(QTextCursor tc, QTextCursor::MoveOperation cursorMovement, QRegExp marker)
+{
+    QTextCursor tc2 = QTextCursor(tc);
+    if (cursorMovement != QTextCursor::NoMove)
+    {
+        tc2.movePosition(cursorMovement);
+    }
+
+    tc2.select(QTextCursor::BlockUnderCursor);
+    QString selected2 = tc2.selectedText();
+    // check if the marker exists
+    int index = selected2.indexOf(marker);
+    bool addCommentAction = (index == -1);
+    return addCommentAction;
+}
+
+QTextCursor applySelection(QTextCursor tc, bool bottomUpDirection, int cursorPosition, int anchorPosition)
+{
+    if (bottomUpDirection)
+    {
+        tc.setPosition(anchorPosition);
+        tc.setPosition(cursorPosition, QTextCursor::KeepAnchor);
+    }
+    else
+    {
+        tc.setPosition(cursorPosition);
+        tc.setPosition(anchorPosition, QTextCursor::KeepAnchor);
+    }
+    return tc;
+}
+
 void BasePlainTextEdit::smartSlashComment()
 {
     QRegExp markerAtLineStartWithIndent = QRegExp("^[\n\u2029]{1}([\\t ]*//[ ]?)");
     QTextCursor tc = textCursor();
 
     // determine how many lines are to affect
-    if (!tc.hasSelection())
-    {
-        // select current line for further processing
-        tc.select(QTextCursor::LineUnderCursor);
-    }
-    QString selected = tc.selectedText();
-    // qt replaces linefeeds with \u2029 so we have to count those
-    int numberOfLines = (selected.isEmpty() ? 1 : selected.count("\u2029")+1);
-    bool multipleLinesWithCursorAtBlockStart = numberOfLines>1 && tc.atBlockStart();
+    int numberOfLines = resolveLineCount(tc);
+    bool cursorAtLineStart = numberOfLines>1 && tc.atBlockStart();
 
     // determine direction of selection
     int cursorPosition = tc.position();
@@ -232,22 +277,15 @@ void BasePlainTextEdit::smartSlashComment()
     bool bottomUpDirection = (anchorPosition < cursorPosition);
 
     // determine the action to apply
-    QTextCursor tc2 = QTextCursor(tc);
-    if (multipleLinesWithCursorAtBlockStart)
-    {
-        // if the cursor is at the block start that line is not part of the action
-        tc2.movePosition(bottomUpDirection ? QTextCursor::Up : QTextCursor::Down);
-    }
-    tc2.select(QTextCursor::BlockUnderCursor);
-    QString selected2 = tc2.selectedText();
-    // check if there is a comment marker
-    int index = selected2.indexOf(markerAtLineStartWithIndent);
-    bool commentMode = (index == -1);
+    // if the cursor is at the block start that line is not part of the action
+    QTextCursor::MoveOperation moveDirection = (bottomUpDirection ? QTextCursor::Up : QTextCursor::Down);
+    QTextCursor::MoveOperation cursorMovement = (cursorAtLineStart ? moveDirection : QTextCursor::NoMove);
+    bool addCommentAction = identifyAction(tc, cursorMovement, markerAtLineStartWithIndent);
 
     // add/remove comment for each line
     QTextCursor shadowCursor = QTextCursor(tc);
 
-    if (multipleLinesWithCursorAtBlockStart)
+    if (cursorAtLineStart)
     {
         // ignore line where the cursor stays
         shadowCursor.movePosition(bottomUpDirection ? QTextCursor::Up : QTextCursor::Down);
@@ -258,7 +296,7 @@ void BasePlainTextEdit::smartSlashComment()
     for (int i = 0; i < numberOfLines; ++i)
     {
         int changes = changeCommentMarker(
-                    commentMode, shadowCursor, markerAtLineStartWithIndent, QString("// "));
+                    addCommentAction, shadowCursor, markerAtLineStartWithIndent, QString("// "));
         totalChanges += changes;
         shadowCursor.movePosition(bottomUpDirection ? QTextCursor::Up : QTextCursor::Down);
     }
@@ -266,7 +304,7 @@ void BasePlainTextEdit::smartSlashComment()
     // a single line operation?
     if (numberOfLines == 1)
     {
-        // yes, place cursor to the start of the next block to allow repeated operation
+        // yes, place cursor to the start of the next block to allow line-wise block operation
         tc.clearSelection();
         tc.movePosition(QTextCursor::NextBlock);
         tc.movePosition(QTextCursor::StartOfLine);
@@ -274,20 +312,11 @@ void BasePlainTextEdit::smartSlashComment()
     }
     else
     {
-        // adjust the original selection with the changes applied
-        int factor = commentMode ? 3 : -3;
-        int newAnchorPos = anchorPosition + factor;
-        int newCursorPos = cursorPosition + totalChanges;
-        if (bottomUpDirection)
-        {
-            tc.setPosition(newAnchorPos);
-            tc.setPosition(newCursorPos, QTextCursor::KeepAnchor);
-        }
-        else
-        {
-            tc.setPosition(newCursorPos);
-            tc.setPosition(newAnchorPos, QTextCursor::KeepAnchor);
-        }
+        // restore the selection with the applied changes
+        int factor = addCommentAction ? +3 : -3;
+        int newAnchorPos = anchorPosition + (bottomUpDirection ? factor : totalChanges);
+        int newCursorPos = cursorPosition + (bottomUpDirection ? totalChanges : factor);
+        tc = applySelection(tc, bottomUpDirection, newCursorPos, newAnchorPos);
         setTextCursor(tc);
     }
 }
@@ -302,71 +331,59 @@ void BasePlainTextEdit::smartBlockComment()
     // determine direction of selection
     int cursorPosition = tc.position();
     int anchorPosition = tc.anchor();
-    bool bottomUpDirection = (anchorPosition < cursorPosition);
+    bool bottomUpDirection = (anchorPosition <= cursorPosition);
 
     // determine how many lines are to affect
-    if (!tc.hasSelection())
+    int numberOfLines = resolveLineCount(tc);
+
+    // relocate cursor at the line start
+    if (numberOfLines>1 && tc.atBlockStart())
     {
-        tc.select(QTextCursor::LineUnderCursor);
+        // relocate cursor at line start without selection
+        tc.movePosition(bottomUpDirection ? QTextCursor::Up : QTextCursor::Down);
+        numberOfLines--;
     }
-    QString selected = tc.selectedText();
-    int numberOfLines = (selected.isEmpty() ? 1 : selected.count("\u2029")+1);
 
     // determine the action to apply
-    QTextCursor tc2 = QTextCursor(tc);
-    tc2.movePosition(bottomUpDirection ? QTextCursor::NextBlock : QTextCursor::PreviousBlock);
-    tc2.select(QTextCursor::BlockUnderCursor);
-    QString selected2 = tc2.selectedText();
-    QRegExp seekForMarker = bottomUpDirection ? closeBlockRegExp : openBlockRegExp;
-    int index = selected2.indexOf(seekForMarker);
-    bool commentMode = (index == -1);
+    QRegExp marker = bottomUpDirection ? closeBlockRegExp : openBlockRegExp;
+    QTextCursor::MoveOperation moveDirection =
+            (bottomUpDirection ? QTextCursor::NextBlock : QTextCursor::PreviousBlock);
+    bool addCommentAction = identifyAction(tc, moveDirection, marker);
 
-    if (commentMode && bottomUpDirection)
+    // adjust cursor position on bottom-up
+    if (bottomUpDirection)
     {
-        numberOfLines++;
+        // start on the next line
+        tc.movePosition(QTextCursor::NextBlock);
+        // and on adding comments move an additional line upward
+        if (addCommentAction)
+        {
+            numberOfLines++;
+        }
+    }
+
+    QTextCursor shadowCursor = QTextCursor(tc);
+    // add/remove block comment
+    QRegExp startRegexp = bottomUpDirection ? closeBlockRegExp : openBlockRegExp;
+    QString startMarker = QString(bottomUpDirection ? "*/\n" : "/*\n");
+    changeCommentMarker(addCommentAction, shadowCursor, startRegexp, startMarker);
+
+    // move cursor n lines to the place of the next marker
+    for (int i = 0; i < numberOfLines; ++i)
+    {
+        shadowCursor.movePosition(bottomUpDirection ? QTextCursor::Up : QTextCursor::Down);
     }
 
     // add/remove block comment
-    QTextCursor shadowCursor = QTextCursor(tc);
-    if (bottomUpDirection)
-    {
-        shadowCursor.movePosition(QTextCursor::Down);
-    }
-    if (!commentMode && !bottomUpDirection)
-    {
-        numberOfLines++;
-        shadowCursor.movePosition(QTextCursor::Up);
-    }
-
-    QRegExp startRegexp = bottomUpDirection ? closeBlockRegExp : openBlockRegExp;
-    QString startMarker = QString(bottomUpDirection ? "*/\n" : "/*\n");
-    changeCommentMarker(commentMode, shadowCursor, startRegexp, startMarker);
-
-    for (int i = 0; i < numberOfLines; ++i)
-    {
-        shadowCursor.movePosition(bottomUpDirection ? QTextCursor::PreviousBlock : QTextCursor::NextBlock);
-        shadowCursor.select(QTextCursor::BlockUnderCursor);
-        QString shadowSelected = shadowCursor.selectedText();
-    }
-
     QRegExp endRegexp = bottomUpDirection ? openBlockRegExp : closeBlockRegExp;
     QString endMarker = QString(bottomUpDirection ? "/*\n" : "*/\n");
-    changeCommentMarker(commentMode, shadowCursor, endRegexp, endMarker);
+    changeCommentMarker(addCommentAction, shadowCursor, endRegexp, endMarker);
 
-    // adjust the original selection with the changes applied
-    int factor = commentMode ? 3 : -3;
+    // restore the selection with the applied changes
+    int factor = addCommentAction ? +3 : -3;
     int newAnchorPos = anchorPosition + factor;
     int newCursorPos = cursorPosition + factor;
-    if (bottomUpDirection)
-    {
-        tc.setPosition(newAnchorPos);
-        tc.setPosition(newCursorPos, QTextCursor::KeepAnchor);
-    }
-    else
-    {
-        tc.setPosition(newCursorPos);
-        tc.setPosition(newAnchorPos, QTextCursor::KeepAnchor);
-    }
+    tc = applySelection(tc, bottomUpDirection, newCursorPos, newAnchorPos);
     setTextCursor(tc);
 }
 
