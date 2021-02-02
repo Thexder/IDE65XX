@@ -27,8 +27,9 @@ protected:
 
 private:
     QPointer<QMenu> contextMenu;
-    QAction *commentAction;
-    QAction *uncommentAction;
+    QAction *smartSlashCommentAction;
+    QAction *smartBlockCommentAction;
+    QAction *deleteLineAction;
     QAction *undoAction;
     QAction *redoAction;
     QAction *cutAction;
@@ -41,8 +42,9 @@ private:
     int zoom;
 
 public slots:
-    void commentSelectedCode();
-    void uncommentSelectedCode();
+    void smartSlashComment();
+    void smartBlockComment();
+    void deleteLineAtCursor();
     void deleteSelected();
     void uppercaseSelectedCode();
     void lowercaseSelectedCode();

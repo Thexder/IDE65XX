@@ -227,35 +227,44 @@ void CodeEditor::keyPressEvent(QKeyEvent *event)
         }
     }
 
-    // bookmark
-    if( (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_B)) // CTRL + B
+    // any trigger?
+    if (event->modifiers().testFlag(Qt::ControlModifier))
     {
-        setBookmarkOnCurrentLine();
-    }
-    // show find dialog signal
-    else if( (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_F)) // CTRL + F
-    {
-        showFindDialog();
-    }
-    // uppercase
-    else if( (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_U)) // CTRL + U
-    {
-        uppercaseSelectedCode();
-    }
-    // lowercase
-    else if( (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_L)) // CTRL + L
-    {
-        lowercaseSelectedCode();
-    }
-    // comment
-    else if( (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_Q)) // CTRL + Q
-    {
-        commentSelectedCode();
-    }
-    // uncomment
-    else if( (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_R)) // CTRL + R
-    {
-        uncommentSelectedCode();
+        // bookmark
+        if(event->key() == Qt::Key_B) // CTRL + B
+        {
+            setBookmarkOnCurrentLine();
+        }
+        // show find dialog signal
+        else if(event->key() == Qt::Key_F) // CTRL + F
+        {
+            showFindDialog();
+        }
+        // uppercase
+        else if(event->key() == Qt::Key_U) // CTRL + U
+        {
+            uppercaseSelectedCode();
+        }
+        // lowercase
+        else if(event->key() == Qt::Key_L) // CTRL + L
+        {
+            lowercaseSelectedCode();
+        }
+        // slash comment/uncomment
+        else if(event->key() == Qt::Key_Slash) // CTRL + /
+        {
+            smartSlashComment();
+        }
+        // block comment/uncomment
+        else if( (event->modifiers().testFlag(Qt::ShiftModifier) && event->key() == Qt::Key_Slash)) // CTRL + SHIFT + /
+        {
+            smartBlockComment();
+        }
+        // delete line at cursor
+        else if(event->key() == Qt::Key_Delete) // CTRL + Delete
+        {
+            deleteLineAtCursor();
+        }
     }
 
     BasePlainTextEdit::keyPressEvent(event);
