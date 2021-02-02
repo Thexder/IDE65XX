@@ -24,7 +24,9 @@ private:
     struct HighlightingRule
     {
         QRegularExpression pattern;
+        bool partialMatch = false;
         QTextCharFormat format;
+
     };
     QVector<HighlightingRule> highlightingRules;
 

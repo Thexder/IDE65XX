@@ -198,10 +198,11 @@ Highlighter::Highlighter(QTextDocument *parent)
 
     // quotation
     quotationFormat.setForeground((styleIsCustom)? settings.value("CustomQuotation", QColor(0x00, 0x80, 0x00)).value<QColor>() : Qt::darkGreen);
-    rule.pattern = QRegularExpression(QStringLiteral("\".*\""));
-    rule.format = quotationFormat;
-    highlightingRules.append(rule);
-    rule.pattern = QRegularExpression(QStringLiteral("'.*'"));
+    // (\"|\') ............ first quote (=group 1 referenced \1 aka ") starts string
+    // (\\\1|[^\1]) ....... and contains either escaped quotes (\\\1 aka \") OR any but the same quote
+    // *?\g1 .............. until the next same quote (\1 aka ") ends the string
+    rule.pattern = QRegularExpression(QStringLiteral("(\"|\')(\\\\1|[^\\1])*?($|\\1)"));
+    rule.partialMatch = true;
     rule.format = quotationFormat;
     highlightingRules.append(rule);
     // end of quotation
@@ -209,13 +210,33 @@ Highlighter::Highlighter(QTextDocument *parent)
 
 void Highlighter::highlightBlock(const QString &text)
 {
+//    bool doLog = text.contains(".const") || text.contains("#import");
+
+//    if (doLog) qDebug("text=%s", qPrintable(text));
+
+//    if (doLog) {
+//        QRegularExpression regex = QRegularExpression("(\"|\')(\\\\1|[^\\1])*($|\\1)");
+//        QRegularExpressionMatchIterator matchIterator = regex.globalMatch(text);
+//        if (matchIterator.hasNext()) {
+//         QRegularExpressionMatch match = matchIterator.next();
+//            qDebug(" x=%s p=%d", qPrintable(match.captured(0)), match.capturedStart(0));
+//        }
+//    }
+
     for (const HighlightingRule &rule : qAsConst(highlightingRules)) {
-        QRegularExpressionMatchIterator matchIterator = rule.pattern.globalMatch(text);
+
+//        bool thisRule = rule.pattern.pattern().contains("\\1");
+        QRegularExpression::MatchType matchType = (rule.partialMatch ?
+            QRegularExpression::PartialPreferCompleteMatch : QRegularExpression::NormalMatch);
+        QRegularExpressionMatchIterator matchIterator = rule.pattern.globalMatch(text, 0, matchType);
         while (matchIterator.hasNext()) {
             QRegularExpressionMatch match = matchIterator.next();
             setFormat(match.capturedStart(), match.capturedLength(), rule.format);
+
+//            if (thisRule && doLog) qDebug("match=%s partial=%d", qPrintable(match.captured()), match.hasPartialMatch());
         }
     }
+
     setCurrentBlockState(0);
 
     int startIndex = 0;
