@@ -83,6 +83,7 @@ RESOURCES += \
     resource.qrc
 
 DISTFILES += \
+    README.md \
     version.rc
 
 # macos app
