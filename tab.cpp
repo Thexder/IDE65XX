@@ -68,6 +68,7 @@ bool Tab::loadCodeFromFile(const QString &filePath)
     code->setPlainText(source);
     currentFilePath = filePath;
     code->document()->setModified(false);
+    getCodeDocument()->setBaseUrl(filePath);
     file.close();
     return true;
 }
