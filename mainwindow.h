@@ -33,6 +33,7 @@
 #include "qhexedit2/qhexedit.h"
 #include "hexsearchdialog.h"
 #include "cartconv.h"
+#include "context.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -174,6 +175,8 @@ private:
     QModelIndex selectedIndex;
 
     QString workspacePath;
+
+    Context assemblyContext;
 
     // settings
     QSettings settings;

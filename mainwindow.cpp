@@ -626,7 +626,7 @@ void MainWindow::openFileFromPath(QString filenamePath)
                 (ext=="sym")||
                 (ext=="s")||
                 (ext=="a")
-            ) tab->highlighter = new Highlighter(tab->code->document());
+            ) tab->highlighter = new Highlighter(&assemblyContext, tab->code->document());
         connect(tab->code, SIGNAL(modificationChanged(bool)), this, SLOT(changeCurrentSavedState(bool)));
         connect(tab->code, SIGNAL(textChanged()), this, SLOT(changeCode()));
         connect(tab->code, SIGNAL(selectionChanged()), this, SLOT(selectionChangeCode()));
@@ -638,6 +638,7 @@ void MainWindow::openFileFromPath(QString filenamePath)
         connect(tab->code, SIGNAL(AfterEnterSendLine(QString)), this, SLOT(ReceiveLineForCompleter(QString)));
 
         tab->code->document()->setModified(false);
+        tab->code->document()->setBaseUrl(filenamePath);
         tab->code->setCompleter(completer);
         tab->code->setFocus();
         tab->code->setFont(QFont(pCodeFontName, pCodeFontSize));
@@ -1348,9 +1349,9 @@ void MainWindow::prepareBeforeOpen(QString filename)
             (ext=="txt")||
             (ext=="sym")||
             (ext=="dbg")||
+            (ext=="vs")||
             (ext=="s")||
-            (ext=="a")||
-            (ext=="vs")
+            (ext=="a")
         )
     {
         openFileFromPath(filename);
@@ -1815,6 +1816,8 @@ void MainWindow::OpenWithHexEditor()
 void MainWindow::SetAssemblyFile()
 {
     pAssemblyFile = filePath.remove(workspacePath);
+    qDebug("setAssemblyFile=%s", qPrintable(pAssemblyFile));
+    assemblyContext.startWith(workspacePath, pAssemblyFile);
     ui->lAssemblyFile->setText(pAssemblyFile);
     settings.setValue("AssemblyFile", pAssemblyFile);
     settings.sync();
@@ -2391,6 +2394,8 @@ void MainWindow::readSettingsOptionsOnly()
                            #endif
                                ).toString();
     pAssemblyFile = settings.value("AssemblyFile").toString();
+    qDebug("readSettings.AssemblyFile=%s", qPrintable(pAssemblyFile));
+    assemblyContext.startWith(workspacePath, pAssemblyFile);
     ui->lAssemblyFile->setText(pAssemblyFile);
     settingsWin->setDebugger(pDebugger);
     pMaxRecentWorkspace = settings.value("MaxRecentWorkspace", 10).toInt();

@@ -7,6 +7,7 @@
 #include <QQueue>
 #include <QRegularExpression>
 #include <QSettings>
+#include "context.h"
 
 QT_BEGIN_NAMESPACE
 class QTextDocument;
@@ -17,7 +18,7 @@ class Highlighter : public QSyntaxHighlighter
     Q_OBJECT
 
 public:
-    Highlighter(QTextDocument *parent = nullptr);
+    Highlighter(Context *assemblyContext, QTextDocument *parent = nullptr);
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -26,7 +27,9 @@ private slots:
     void validateStructureChanges();
 
 private:
-    /* static rules */
+    Context *context;
+
+    /* definitions at block */
     struct BlockData : public QTextBlockUserData
     {
         QStringList definitions;

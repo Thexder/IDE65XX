@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
     QSettings settings(Common::appConfigDir()+"/settings.ini", QSettings::IniFormat);
 
     // application style
-    int style = settings.value("ApplicationStyle", 3).toInt();
+    int style = settings.value("ApplicationStyle", 1).toInt();
     switch (style) {
         case 0: qApp->setStyle(QStyleFactory::create("fusion")); break;     // fusion
         case 1: qApp->setStyle(new DarkFusionStyle()); break;               // darkfusion

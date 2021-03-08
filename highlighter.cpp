@@ -1,77 +1,21 @@
 #include "highlighter.h"
 #include "common.h"
+#include "debugutil.h"
 
-QString toString(QMultiMap<QString, int> multiMap) {
-
-    QByteArray toString;
-    QMapIterator<QString, int> i(multiMap);
-    while (i.hasNext()) {
-        QMapIterator<QString, int>::Item item = i.next();
-        toString.append(qPrintable(item.key()));
-        toString.append("=");
-        toString.append(QString::number(item.value()).toUtf8());
-        toString.append(",");
-    }
-    toString.truncate(toString.size()-1);
-    return toString;
-}
-
-QString toString(QMultiMap<int, QStringList>  multiMap) {
-
-    QByteArray toString;
-    QMapIterator<int, QStringList> i(multiMap);
-    while (i.hasNext()) {
-        QMapIterator<int, QStringList>::Item item = i.next();
-        if (item.value().size() > 0) {
-            toString.append(QString::number(item.key()).toUtf8());
-            toString.append("={");
-            QStringListIterator l(item.value());
-            while (l.hasNext()) {
-                toString.append(qPrintable(l.next()));
-                toString.append(",");
-            }
-            toString.truncate(toString.size()-1);
-            toString.append("},");
-        }
-    }
-    if (toString.size() >= 1) {
-        toString.truncate(toString.size()-1);
-    }
-    return toString;
-}
-
-QString toString(QStringList stringList) {
-
-    QByteArray toString;
-    for (QStringList::Iterator S =  stringList.begin(); S != stringList.end(); S++) {
-        toString.append(qPrintable(*S));
-        toString.append(",");
-    }
-    toString.truncate(toString.size()-1);
-    return toString;
-}
-
-QString toString(QSet<QString> set) {
-
-    QByteArray toString;
-    QSetIterator<QString> i(set);
-    while (i.hasNext()) {
-        QString item = i.next();
-        toString.append(qPrintable(item));
-        toString.append(",");
-    }
-    toString.truncate(toString.size()-1);
-    return toString;
-}
-
-bool logActive = false;
+bool logActive = true;
 bool doLog = logActive;
 
-Highlighter::Highlighter(QTextDocument *parent)
+Highlighter::Highlighter(Context *assemblyContext, QTextDocument *parent)
     : QSyntaxHighlighter(parent)
 {
     QUrl url = parent->baseUrl();
     if (doLog) qDebug("file=%s", qPrintable(url.url()));
+
+    context = assemblyContext;
+
+    if (doLog) qDebug("seeking %s", qPrintable(url.url()));
+    Context::Source source = context->getSource(url.url());
+    if (doLog) qDebug("got %s", qPrintable(DebugUtil::toString(source)));
 
     QSettings settings(Common::appConfigDir()+"/settings.ini", QSettings::IniFormat);
 
@@ -147,7 +91,8 @@ Highlighter::Highlighter(QTextDocument *parent)
 
     // number
     numberFormat.setForeground((styleIsCustom)? settings.value("CustomNumber", QColor(0x00, 0x80, 0x80)).value<QColor>() : Qt::darkCyan);
-    rule.pattern = QRegularExpression(QStringLiteral("(?:\\$[0-9a-fA-F]*)|(?:\\#\\$[0-9a-fA-F]*)|(?:\\#\\%[01]*)|(?:\\%[01]*)|(?:\\#[0-9]*)|(?:\\ [0-9]*)|(?:\\([0-9]*\\))"));
+    rule.pattern = QRegularExpression(QStringLiteral("\\$[0-9a-fA-F]+|\\%[01]+|(?<=\\W)[0-9]+"));
+//    rule.pattern = QRegularExpression(QStringLiteral("(?:\\$[0-9a-fA-F]*)|(?:\\#\\$[0-9a-fA-F]*)|(?:\\#\\%[01]*)|(?:\\%[01]*)|(?:\\#[0-9]*)|(?:\\ [0-9]*)|(?:\\([0-9]*\\))"));
     rule.format = numberFormat;
     strictHighlightingRules.append(rule);
     // end of number
@@ -171,7 +116,20 @@ Highlighter::Highlighter(QTextDocument *parent)
     references.referenceFormat.setFontItalic(true);
     references.referenceFormat.setForeground((styleIsCustom)? settings.value("CustomReference", QColor(0xc3, 0x34, 0x34)).value<QColor>() : QColor(0xc3, 0x34, 0x34));
     references.nominator = QRegularExpression(QStringLiteral("([\\w]+)(?#ref)"));
+    references.names = source.global.labels;
     labelReferences = references;
+    // adds the label definitions to the user data for each specific line
+    QMapIterator<QString, int> i(references.names);
+    while (i.hasNext()) {
+        i.next();
+        QTextBlock textBlock = parent->findBlockByLineNumber(i.value());
+        BlockData* blockData = static_cast<BlockData*>(textBlock.userData());
+        if (!blockData) {
+            blockData = new BlockData;
+            textBlock.setUserData(blockData);
+        }
+        blockData->definitions.append(i.key());
+    }
     // end of label reference
 
     // assembler Directives
@@ -290,20 +248,10 @@ Highlighter::Highlighter(QTextDocument *parent)
     commentEndExpression = QRegularExpression(QStringLiteral("\\*/"));
     // end of comments
 
-    // extract references as a first index on initialization
-    QString documentText = parent->toPlainText();
-
-    // remove comments
-    documentText = QString(documentText).remove(singleLineCommentRule.pattern.pattern());
-    documentText = QString(documentText).remove(
-                commentStartExpression.pattern()+".*?"+commentEndExpression.pattern());
-
-    extractDefinitions(documentText, labelReferences);
-
     // go live
     detectStructureChanges = true;
 
-    if (doLog) qDebug("references size=%d content={%s}", labelReferences.names.size(), qPrintable(toString(labelReferences.names)));
+    if (doLog) qDebug("references size=%d content={%s}", labelReferences.names.size(), qPrintable(DebugUtil::toString(labelReferences.names)));
 }
 
 void Highlighter::formatMatches(QString text, QRegularExpression pattern, bool partialMatch, int groupToFormat, QTextCharFormat format) {
@@ -339,7 +287,7 @@ void Highlighter::extractDefinitions(QString text, References& references) {
         blockData = new BlockData;
         this->setCurrentBlockUserData(blockData);
     }
-    if (doLog) qDebug("  BLOCK old=[%s]", qPrintable(toString(blockData->definitions)));
+    if (doLog) qDebug("  BLOCK old=[%s]", qPrintable(DebugUtil::toString(blockData->definitions)));
     if (blockData->definitions.isEmpty() && sourcePerLine.isEmpty()) {
         // ignore empty definitions
     } else {
@@ -377,7 +325,7 @@ void Highlighter::extractDefinitions(QString text, References& references) {
         }
         blockData->definitions = sourcePerLine;
     }
-    if (doLog) qDebug("  BLOCK new=[%s]", qPrintable(toString(blockData->definitions)));
+    if (doLog) qDebug("  BLOCK new=[%s]", qPrintable(DebugUtil::toString(blockData->definitions)));
     if (doLog) qDebug("  hasStructureChanges=%d", hasStructureChanges);
 }
 
@@ -477,9 +425,9 @@ void Highlighter::highlightBlock(const QString &text)
     }
 
     if (detectStructureChanges) {
-        if (doLog) qDebug("  EXTRACT old size=%d names={%s}", labelReferences.names.size(), qPrintable(toString(labelReferences.names)));
+        if (doLog) qDebug("  EXTRACT old size=%d names={%s}", labelReferences.names.size(), qPrintable(DebugUtil::toString(labelReferences.names)));
         extractDefinitions(textToExtractFrom, labelReferences);
-        if (doLog) qDebug("  EXTRACT new size=%d names={%s}", labelReferences.names.size(), qPrintable(toString(labelReferences.names)));
+        if (doLog) qDebug("  EXTRACT new size=%d names={%s}", labelReferences.names.size(), qPrintable(DebugUtil::toString(labelReferences.names)));
     }
 
     formatReferences(textToExtractFrom, labelReferences);

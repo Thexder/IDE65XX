@@ -14,8 +14,10 @@ SOURCES += \
     codeeditor.cpp \
     commodorestyle.cpp \
     common.cpp \
+    context.cpp \
     customstyle.cpp \
     darkfusionstyle.cpp \
+    debugutil.cpp \
     delegate.cpp \
     fabricstyle.cpp \
     hexsearchdialog.cpp \
@@ -44,8 +46,10 @@ HEADERS += \
     codeeditor.h \
     commodorestyle.h \
     common.h \
+    context.h \
     customstyle.h \
     darkfusionstyle.h \
+    debugutil.h \
     delegate.h \
     fabricstyle.h \
     hexsearchdialog.h \
