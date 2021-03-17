@@ -35,66 +35,77 @@ void Context::scan(Source& source) {
     if (doLog) qDebug("file=%s exists=%d", qPrintable(file.fileName()), file.exists());
 
     if(file.open(QIODevice::ReadOnly | QIODevice::Text )) {
-        int counter = -1;
+        int lineNumber = -1;
         QTextStream stream(&file);
         bool ignoreSection = false;
         while (!stream.atEnd()) {
             QString line = stream.readLine();
-            counter++;
-            // sections of comments and no end in sight
-            if (line.isEmpty() || (ignoreSection && line.indexOf("*/")==-1)) {
-                // skip line
-                continue;
-            }
-            bool ignore = ignoreSection;
-            QRegularExpressionMatchIterator scans = scanPattern.globalMatch(line);
-            while (scans.hasNext()) {
-                QRegularExpressionMatch scan = scans.next();
-                if (!ignore && scan.captured(1) == "//") {
-                    // single line comment - skip line
-                    break;
-                } else if (!ignore && scan.captured(1) == "/*") {
-                    // starting multi line comment
-                    ignore = true;
-                    ignoreSection = true;
-                } else if (ignore && scan.captured(1) == "*/") {
-                    // ending multi line comment
-                    ignore = false;
-                    ignoreSection = false;
-                } else {
-                    if (doLog) qDebug("  #%d [%s]", counter, qPrintable(line));
-                    if (scan.captured(1).endsWith("import")) {
-                        // import found
-                        QRegularExpressionMatchIterator imports = QRegularExpressionMatchIterator();
-                        if (scan.captured(1) == "#import") {
-                            imports = importPreprocessorPattern.globalMatch(line, scan.capturedStart(1));
-                        } else if (scan.captured(1) == ".import") {
-                            imports = importDirectivePattern.globalMatch(line, scan.capturedStart(1));
-                        }
-                        if (imports.hasNext()) {
-                            QRegularExpressionMatch import = imports.next();
-                            QString relativeFile = import.captured(2).replace("./", "/");
-                            if (doLog) qDebug("    import found=%s", qPrintable(relativeFile));
-                            if (!context.contains(relativeFile) && !queue.contains(relativeFile)) {
-                                source.imports.append(relativeFile);
-                                queue.append(relativeFile);
-                                if (doLog) qDebug("      added to queue file=%s", qPrintable(relativeFile));
-                            }
-                        }
-                    } else if (scan.captured(1).endsWith("const")) {
-                        // constant found
-                        addMatches(line, counter, scan.capturedStart(1), constantDirectivePattern, source.global.consts);
-                    } else if (scan.captured(1).endsWith("label") || scan.captured(1).endsWith(":")) {
-                        // label found
-                        addMatches(line, counter, scan.capturedStart(1), labelDirectivePattern, source.global.labels);
-                    } else if (scan.captured(1).endsWith("macro")) {
-                        // macro found
-                        addMatches(line, counter, scan.capturedStart(1), macroDirectivePattern, source.global.macros);
+            lineNumber++;
+            ignoreSection = scanLine(line, lineNumber, ignoreSection, source);
+        }
+    }
+}
+
+bool Context::scanLine(QString line, int lineNumber, bool blockCommentActive, Source& source) {
+    // sections of comments and no end in sight
+    if (line.isEmpty() || (blockCommentActive && line.indexOf("*/")==-1)) {
+        // skip line
+        return blockCommentActive;
+    }
+    bool ignore = blockCommentActive;
+    QRegularExpressionMatchIterator scans = scanPattern.globalMatch(line);
+    while (scans.hasNext()) {
+        QRegularExpressionMatch scan = scans.next();
+        if (!ignore && scan.captured(1) == "//") {
+            // single line comment - skip line
+            break;
+        } else if (!ignore && scan.captured(1) == "/*") {
+            // starting multi line comment
+            ignore = true;
+            blockCommentActive = true;
+        } else if (ignore && scan.captured(1) == "*/") {
+            // ending multi line comment
+            ignore = false;
+            blockCommentActive = false;
+        } else {
+            if (doLog) qDebug("  #%d [%s]", lineNumber, qPrintable(line));
+            if (scan.captured(1).endsWith("import")) {
+                // import found
+                QRegularExpressionMatchIterator imports = QRegularExpressionMatchIterator();
+                if (scan.captured(1) == "#import") {
+                    imports = importPreprocessorPattern.globalMatch(line, scan.capturedStart(1));
+                } else if (scan.captured(1) == ".import") {
+                    imports = importDirectivePattern.globalMatch(line, scan.capturedStart(1));
+                }
+                if (imports.hasNext()) {
+                    QRegularExpressionMatch import = imports.next();
+                    QString relativeFile = import.captured(2).replace("./", "/");
+                    if (doLog) qDebug("    import found=%s", qPrintable(relativeFile));
+                    if (!context.contains(relativeFile) && !queue.contains(relativeFile)) {
+                        source.imports.append(relativeFile);
+                        queue.append(relativeFile);
+                        if (doLog) qDebug("      added to queue file=%s", qPrintable(relativeFile));
                     }
                 }
+            } else if (scan.captured(1).endsWith("const")) {
+                // constant found
+                addMatches(line, lineNumber, scan.capturedStart(1), constantDirectivePattern, source.global.consts);
+            } else if (scan.captured(1).endsWith("label") || scan.captured(1).endsWith(":")) {
+                // label found
+                addMatches(line, lineNumber, scan.capturedStart(1), labelDirectivePattern, source.global.labels);
+            } else if (scan.captured(1).endsWith("macro")) {
+                // macro found
+                addMatches(line, lineNumber, scan.capturedStart(1), macroDirectivePattern, source.global.macros);
             }
         }
     }
+    return blockCommentActive;
+}
+
+Context::Source Context::scanLine(QString line, int lineNumber, bool blockCommentActive) {
+    Context::Source source;
+    scanLine(line, lineNumber, blockCommentActive, source);
+    return source;
 }
 
 void Context::startWith(QString workspacePath, QString relativeFile) {

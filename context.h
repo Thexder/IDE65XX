@@ -40,11 +40,13 @@ public:
     };
 
     Source getSource(QString relativeFile);
+    Source scanLine(QString line, int lineNumber, bool blockCommentActive);
 
 
 private:
 
     void scan(Source& source);
+    bool scanLine(QString line, int lineNumber, bool blockCommentActive, Source& source);
     void addMatches(QString line, int& lineNumber, int offset, QRegularExpression pattern, QMultiMap<QString, int>& definition);
 
     QRegularExpression scanPattern;
